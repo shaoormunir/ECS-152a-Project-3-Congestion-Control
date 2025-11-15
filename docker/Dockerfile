@@ -1,28 +1,28 @@
-# For more information, please refer to https://aka.ms/vscode-docker-python
-FROM python:latest
+FROM python:3.11-slim
 
-# Keeps Python from generating .pyc files in the container
-ENV PYTHONDONTWRITEBYTECODE=1
+# Prevents Python from writing pyc files and enables unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=America/Los_Angeles
 
-# Turns off buffering for easier container logging
-ENV PYTHONUNBUFFERED=1
+# Install system dependencies and clean up in one layer
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    iproute2 \
+    bc \
+    tzdata && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set current directory as ENV
-ENV PATH=/app:$PATH
+# Install Python packages
+RUN pip install --no-cache-dir tqdm
 
-# Needed for tzdata
-ARG DEBIAN_FRONTEND=noninteractive
-ENV TZ=America/Los_Angeles
-
-# install dependencies
-RUN apt update
-RUN apt install -y iproute2
-RUN apt install -y bc
-# copy items
+# Set working directory
 WORKDIR /app
-COPY training_profile.sh ./
-COPY docker-script.sh ./
-COPY receiver.py ./
 
-# start receiver
+# Copy required files
+COPY training_profile.sh docker-script.sh receiver.py ./
+RUN chmod +x training_profile.sh docker-script.sh
+
+# Start receiver with network simulation
 CMD ["./docker-script.sh"]

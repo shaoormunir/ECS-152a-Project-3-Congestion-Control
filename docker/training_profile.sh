@@ -1,32 +1,68 @@
 #!/bin/bash
+# Public Test Profile - Predictable patterns for debugging
+bandwidth=50000  # 50 Mbps baseline
+delay=50         # 50ms baseline RTT
+pl=0.1          # 0.1% baseline loss
 
-bandwidth=100000
-pl=0
+# Initial setup - Apply traffic shaping to loopback interface (lo) for localhost traffic
+tc qdisc add dev lo root handle 1: htb default 1
+tc class add dev lo parent 1: classid 1:1 htb rate ${bandwidth}kbit ceil ${bandwidth}kbit
+tc qdisc add dev lo parent 1:1 handle 10: netem delay ${delay}ms loss ${pl}%
 
-# Initial setup
-tc qdisc add dev eth0 root handle 1: htb default 1
-tc class add dev eth0 parent 1: classid 1:1 htb rate $bandwidth ceil $bandwidth
-tc qdisc add dev eth0 parent 1:1 handle 10: netem delay 100ms reorder 7% 40% limit 1000 loss "$pl%"
+phase=1
+counter=0
 
 while true; do
-    random_number=$((1 + RANDOM % 10))
+    counter=$((counter + 1))
+    
+    case $phase in
+        1)
+            bandwidth=50000
+            delay=50
+            pl=0.1
+            if [ $counter -ge 15 ]; then
+                phase=2
+                counter=0
+            fi
+            ;;
 
-    if [ "$random_number" -ge 1 ] && [ "$random_number" -lt 7 ]; then
-        bandwidth=$((bandwidth / 2))
-        pl=$((pl + 2))
-    else
-        bandwidth=$((bandwidth / 3))
-        pl=$((pl + 3))
-    fi
+        2)
+            bandwidth=10000
+            delay=50
+            pl=1.0
+            if [ $counter -ge 10 ]; then
+                phase=3
+                counter=0
+            fi
+            ;;
 
-    if [ $bandwidth -lt 2000 ]; then
-        bandwidth=100000
-    fi
-    if [ $pl -gt 20 ]; then
-        pl=0
-    fi
+        3)
+            bandwidth=30000
+            delay=$((50 + RANDOM % 100))
+            pl=0.5
+            if [ $counter -ge 12 ]; then
+                phase=4
+                counter=0
+            fi
+            ;;
 
-    tc class change dev eth0 parent 1: classid 1:1 htb rate $bandwidth ceil $bandwidth
-    tc qdisc change dev eth0 parent 1:1 handle 10: netem delay 100ms reorder 7% 40% limit 1000 loss "$pl%"
+        4)
+            bandwidth=40000
+            delay=75
+            if [ $((counter % 10)) -eq 0 ]; then
+                pl=15
+            else
+                pl=0
+            fi
+            if [ $counter -ge 15 ]; then
+                phase=1
+                counter=0
+            fi
+            ;;
+    esac
+    tc class change dev lo parent 1: classid 1:1 htb rate ${bandwidth}kbit ceil ${bandwidth}kbit
+    tc qdisc change dev lo parent 1:1 handle 10: netem delay ${delay}ms loss ${pl}%
+    
+    echo "Phase: $phase, Time: $counter, BW: ${bandwidth}kbit, Delay: ${delay}ms, Loss: ${pl}%"
     sleep 1
 done
