@@ -80,13 +80,13 @@ docker/
 
 The emulated network randomly transitions through 5 phases with varying conditions to test robustness and adaptability:
 
-| Phase | Scenario | Bandwidth | Latency | Loss | Duration | Special Characteristics |
-|-------|----------|-----------|---------|------|----------|------------------------|
-| 1     | Stable Network | 45-55 Mbps | 40-70ms | 0-0.3% | 10-20s | Good conditions with minor jitter |
-| 2     | Congestion | 8-13 Mbps | 60-100ms | 0.5-2% | 10-20s | Simulates network congestion |
-| 3     | High Latency | 25-40 Mbps | 100-250ms | 0-1% | 10-20s | Satellite/long-distance links |
-| 4     | Bursty Loss | 35-45 Mbps | 50-100ms | 0-20% | 10-20s | Random loss bursts (interference) |
-| 5     | Reordering | 40-55 Mbps | 30-70ms | 0-0.5% | 10-20s | Packet reordering enabled |
+| Phase | Scenario | Bandwidth | Latency | Loss |
+|-------|----------|-----------|---------|------|
+| 1     | Stable Network | 45-55 Mbps | 40-70ms | 0-0.3% |
+| 2     | Congestion | 8-13 Mbps | 60-100ms | 0.5-2% |
+| 3     | High Latency | 25-40 Mbps | 100-250ms | 0-1% |
+| 4     | Bursty Loss | 35-45 Mbps | 50-100ms | 0-20% |
+| 5     | Reordering | 40-55 Mbps | 30-70ms | 0-0.5% |
 
 ## Important Notes
 
