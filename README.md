@@ -100,15 +100,17 @@ docker/
 
 ## Network Simulation
 
-The emulated network randomly transitions through 5 phases with varying conditions to test robustness and adaptability:
+The shipping `training_profile.sh` drives a 5-phase traffic pattern by reshaping the loopback interface with `tc`. Each phase lasts 20–40 seconds before randomly switching, so you should expect long stretches of bufferbloat punctuated by shorter recovery periods.
 
-| Phase | Scenario       | Bandwidth  | Latency   | Loss   | Reordering |
-| ----- | -------------- | ---------- | --------- | ------ | ---------- |
-| 1     | Stable Network | 45-55 Mbps | 40-70ms   | 0-1%   | 0-0%       |
-| 2     | Congestion     | 8-13 Mbps  | 60-100ms  | 0.5-2% | 0-0%       |
-| 3     | High Latency   | 25-40 Mbps | 100-250ms | 0-1%   | 0-0%       |
-| 4     | Bursty Loss    | 35-45 Mbps | 50-100ms  | 0-8%   | 0-0%       |
-| 5     | Reordering     | 40-55 Mbps | 30-70ms   | 0-1%   | 1-5%       |
+| Phase | Scenario (from `training_profile.sh`)            | Bandwidth (kbps) | Base Delay (ms) | Loss (%)   | Queue Limit (packets) |
+| ----- | ------------------------------------------------ | ---------------- | --------------- | ---------- | --------------------- |
+| 1     | Moderate bottleneck, large queue                 | 1,200 – 2,500    | 60 – 110        | 0.20 – 0.60 | 40,000                |
+| 2     | Tight bottleneck, aggressive queuing             | 600 – 1,400      | 80 – 140        | 0.25 – 0.70 | 50,000                |
+| 3     | Light congestion / higher capacity               | 2,500 – 4,500    | 40 – 80         | 0.30 – 1.10 | 25,000                |
+| 4     | Moderate capacity                                | 3,500 – 6,000    | 30 – 70         | 0.25 – 0.85 | 20,000                |
+| 5     | Sudden squeeze to force instant queue build-up   | 800 – 1,400      | 70 – 120        | 0.20 – 0.70 | 45,000                |
+
+All phases run over the `lo` interface, so you still test locally, but the HTB + netem stack enforces the above limits (no artificial packet reordering is applied in the current profile). Designing your sender to handle deep queues and varying bandwidth is essential because most time is spent in the “tight bottleneck” phases.
 
 ## Important Notes
 
