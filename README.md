@@ -38,20 +38,13 @@ start_sim.bat
 test_sender.bat my_stop_and_wait.py [payload.zip]
 ```
 
-**What the test scripts now do:**
+**What the test scripts are supposed to do:**
 
 - ✓ Verify Docker/daemon status
 - ✓ Ensure the long-running simulator container is up
 - ✓ Copy your sender and the chosen payload into `/app` and `/hdd`
 - ✓ Start a fresh in-container receiver for every run (instead of restarting the container)
 - ✓ Run your sender, collect metrics, and print CSV + averages
-
-Need to compare two senders side-by-side? Use the updated fairness harness:
-
-```bash
-./test_fairness.sh senderA.py senderB.py [payload.zip]
-```
-It launches two receivers (ports 5001/5002) inside the existing simulator, runs both senders concurrently, and reports Jain’s fairness index plus averaged metrics.
 
 ### Payload files 101
 
