@@ -1,37 +1,55 @@
 @echo off
 REM Unified test script for students to test their sender implementation (Windows)
-REM Usage: test_sender.bat <your_sender.py>
+REM Usage: test_sender.bat <your_sender.py> [payload_file]
 
 setlocal enabledelayedexpansion
 
-REM Check if sender file is provided
+set "SCRIPT_DIR=%~dp0"
+set "CONTAINER_NAME=ecs152a-simulator"
+
 if "%~1"=="" (
     echo [ERROR] No sender file specified
-    echo Usage: test_sender.bat ^<your_sender.py^>
-    echo Example: test_sender.bat my_tcp_tahoe.py
+    echo Usage: test_sender.bat ^<your_sender.py^> [payload_file]
+    echo Example: test_sender.bat my_tcp_tahoe.py file.zip
     exit /b 1
 )
 
-set SENDER_FILE=%~1
-
-REM Check if sender file exists
+set "SENDER_FILE=%~1"
 if not exist "%SENDER_FILE%" (
     echo [ERROR] Sender file '%SENDER_FILE%' not found
     exit /b 1
 )
 
+set "PAYLOAD_ARG=%~2"
+if "%PAYLOAD_ARG%"=="" set "PAYLOAD_ARG=file.zip"
+
+if not defined NUM_RUNS set "NUM_RUNS=1"
+if not defined RECEIVER_PORT set "RECEIVER_PORT=5001"
+
+call :resolve_payload "%PAYLOAD_ARG%" PAYLOAD_SOURCE
+if errorlevel 1 (
+    echo [ERROR] Could not locate payload file '%PAYLOAD_ARG%'.
+    echo         Looked relative to current dir, %SCRIPT_DIR% and %SCRIPT_DIR%hdd.
+    exit /b 1
+)
+
+for %%I in ("%PAYLOAD_SOURCE%") do set "PAYLOAD_BASENAME=%%~nxi"
+call :derive_received "%PAYLOAD_BASENAME%" RECEIVED_BASENAME
+
+set "CONTAINER_PAYLOAD_FILE=/hdd/%PAYLOAD_BASENAME%"
+set "CONTAINER_OUTPUT_FILE=/hdd/%RECEIVED_BASENAME%"
+
 echo ==========================================
 echo ECS 152A - Testing Your Sender Implementation
 echo ==========================================
-echo [INFO] Sender file: %SENDER_FILE%
+echo [INFO] Sender file : %SENDER_FILE%
+echo [INFO] Payload file: %PAYLOAD_SOURCE% ^(copied as %CONTAINER_PAYLOAD_FILE%^)
+echo [INFO] Receiver port (inside container): %RECEIVER_PORT%
 
-REM Pre-flight checks
 echo.
 echo ==========================================
-echo Step 1/5: Pre-flight Checks
+echo Step 1/4: Pre-flight Checks
 echo ==========================================
-
-REM Check if Docker is installed
 echo [INFO] Checking Docker installation...
 docker --version >nul 2>&1
 if errorlevel 1 (
@@ -41,7 +59,6 @@ if errorlevel 1 (
 )
 echo [SUCCESS] Docker is installed
 
-REM Check if Docker daemon is running
 echo [INFO] Checking if Docker daemon is running...
 docker info >nul 2>&1
 if errorlevel 1 (
@@ -51,82 +68,73 @@ if errorlevel 1 (
 )
 echo [SUCCESS] Docker daemon is running
 
-REM Check if container exists
 echo [INFO] Checking if simulator container exists...
-docker ps -a --format "{{.Names}}" | findstr /x "ecs152a-simulator" >nul 2>&1
+docker ps -a --format "{{.Names}}" | findstr /x "%CONTAINER_NAME%" >nul 2>&1
 if errorlevel 1 (
     echo [WARNING] Simulator container not found
     echo [INFO] Starting simulator for the first time...
-    call start_sim.bat
+    call "%SCRIPT_DIR%start_sim.bat"
     timeout /t 5 /nobreak >nul
 ) else (
-    REM Container exists, check if it's running
-    docker ps --format "{{.Names}}" | findstr /x "ecs152a-simulator" >nul 2>&1
+    docker ps --format "{{.Names}}" | findstr /x "%CONTAINER_NAME%" >nul 2>&1
     if errorlevel 1 (
         echo [WARNING] Simulator container exists but is not running
         echo [INFO] Starting simulator...
-        docker start ecs152a-simulator >nul 2>&1
+        docker start %CONTAINER_NAME% >nul 2>&1
         timeout /t 3 /nobreak >nul
     ) else (
         echo [INFO] Simulator container is already running
     )
 )
 
-REM Restart receiver to reset state
 echo.
 echo ==========================================
-echo Step 2/5: Preparing Test Environment
+echo Step 2/4: Preparing Test Environment
 echo ==========================================
-echo [INFO] Restarting receiver to reset state...
-docker restart ecs152a-simulator >nul 2>&1
-timeout /t 3 /nobreak >nul
-echo [SUCCESS] Receiver restarted and ready
-
-REM Copy sender file into container
 echo [INFO] Copying your sender file into container...
-docker cp "%SENDER_FILE%" ecs152a-simulator:/app/sender.py >nul 2>&1
+docker cp "%SENDER_FILE%" %CONTAINER_NAME%:/app/sender.py >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Failed to copy sender file into container
     exit /b 1
 )
 echo [SUCCESS] Sender file copied
 
-REM Ensure test file is in container
-echo [INFO] Copying test file (file.mp3) into container...
-if exist "file.mp3" (
-    docker cp file.mp3 ecs152a-simulator:/hdd/ >nul 2>&1
-) else if exist "hdd\file.mp3" (
-    docker cp hdd\file.mp3 ecs152a-simulator:/hdd/ >nul 2>&1
-) else (
-    echo [ERROR] Test file (file.mp3) not found in docker\ or docker\hdd\
+echo [INFO] Copying payload into container...
+docker cp "%PAYLOAD_SOURCE%" %CONTAINER_NAME%:%CONTAINER_PAYLOAD_FILE% >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Failed to copy payload file into container
     exit /b 1
 )
-echo [SUCCESS] Test file ready
+echo [SUCCESS] Payload ready
 
-REM Remove old output file if exists
-docker exec ecs152a-simulator rm -f /hdd/file2.mp3 >nul 2>&1
-
-REM Run the sender
 echo.
 echo ==========================================
-echo Step 3/3: Running Your Sender
+echo Step 3/4: Starting Receiver
+echo ==========================================
+echo [INFO] Resetting receiver state...
+docker exec %CONTAINER_NAME% pkill -f receiver.py >nul 2>&1
+docker exec %CONTAINER_NAME% rm -f %CONTAINER_OUTPUT_FILE% >nul 2>&1
+docker exec -d %CONTAINER_NAME% env RECEIVER_PORT=%RECEIVER_PORT% TEST_FILE=%CONTAINER_PAYLOAD_FILE% PAYLOAD_FILE=%CONTAINER_PAYLOAD_FILE% RECEIVER_OUTPUT_FILE=%CONTAINER_OUTPUT_FILE% python3 /app/receiver.py >nul 2>&1
+timeout /t 2 /nobreak >nul
+echo [SUCCESS] Receiver is running inside the container
+
+echo.
+echo ==========================================
+echo Step 4/4: Running Your Sender
 echo ==========================================
 echo [INFO] Executing your sender implementation...
 echo.
 
-REM Run sender and capture exit code
-docker exec ecs152a-simulator python3 /app/sender.py 2>&1
-set SENDER_EXIT_CODE=%errorlevel%
+docker exec %CONTAINER_NAME% env RECEIVER_PORT=%RECEIVER_PORT% TEST_FILE=%CONTAINER_PAYLOAD_FILE% PAYLOAD_FILE=%CONTAINER_PAYLOAD_FILE% python3 /app/sender.py 2>&1
+set "SENDER_EXIT_CODE=%errorlevel%"
 echo.
 
-if not %SENDER_EXIT_CODE%==0 (
+if not "%SENDER_EXIT_CODE%"=="0" (
     echo [ERROR] Sender exited with error code %SENDER_EXIT_CODE%
     echo [WARNING] Check the output above for error messages
     exit /b 1
 )
 
-REM Display metrics info
-echo.
 echo ==========================================
 echo Performance Metrics
 echo ==========================================
@@ -137,3 +145,52 @@ echo [SUCCESS] Test completed successfully!
 echo.
 
 endlocal
+exit /b 0
+
+:resolve_payload
+set "CANDIDATE=%~1"
+set "RESULT_VAR=%~2"
+
+if exist "%CANDIDATE%" (
+    for %%F in ("%CANDIDATE%") do (
+        set "%RESULT_VAR%=%%~fF"
+    )
+    exit /b 0
+)
+
+set "FIRST_CHAR=%CANDIDATE:~0,1%"
+set "IS_ABSOLUTE=0"
+if "%FIRST_CHAR%"=="/" set "IS_ABSOLUTE=1"
+if "%FIRST_CHAR%"=="\" set "IS_ABSOLUTE=1"
+if not "%CANDIDATE:~1,1%"=="" if "%CANDIDATE:~1,1%"==":" set "IS_ABSOLUTE=1"
+
+if "%IS_ABSOLUTE%"=="0" (
+    if exist "%SCRIPT_DIR%%CANDIDATE%" (
+        for %%F in ("%SCRIPT_DIR%%CANDIDATE%") do (
+            set "%RESULT_VAR%=%%~fF"
+        )
+        exit /b 0
+    )
+    if exist "%SCRIPT_DIR%hdd\%CANDIDATE%" (
+        for %%F in ("%SCRIPT_DIR%hdd\%CANDIDATE%") do (
+            set "%RESULT_VAR%=%%~fF"
+        )
+        exit /b 0
+    )
+)
+
+exit /b 1
+
+:derive_received
+set "FILENAME=%~1"
+set "RESULT_VAR=%~2"
+for %%F in ("%FILENAME%") do (
+    set "NAME_ONLY=%%~nF"
+    set "EXT=%%~xF"
+)
+if "%EXT%"=="" (
+    set "%RESULT_VAR%=%FILENAME%_received"
+) else (
+    set "%RESULT_VAR%=%NAME_ONLY%_received%EXT%"
+)
+exit /b 0

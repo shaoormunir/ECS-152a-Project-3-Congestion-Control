@@ -1,85 +1,95 @@
 #!/bin/bash
-bandwidth=50000
-delay=50
-pl=0.1
 
+bandwidth=50000   # initial BW (kbit)
+delay=50          # initial base delay (ms)
+pl=0.1            # initial loss (%)
+limit=10000       # queue size in packets
 
-tc qdisc add dev lo root handle 1: htb default 1
-tc class add dev lo parent 1: classid 1:1 htb rate ${bandwidth}kbit ceil ${bandwidth}kbit
-tc qdisc add dev lo parent 1:1 handle 10: netem delay ${delay}ms loss ${pl}%
+# Clean up qdisc on exit
+trap "tc qdisc del dev lo root 2>/dev/null" EXIT
 
-phase=1
+# Root HTB and netem under it
+tc qdisc replace dev lo root handle 1: htb default 1
+tc class replace dev lo parent 1: classid 1:1 htb rate ${bandwidth}kbit ceil ${bandwidth}kbit
+tc qdisc replace dev lo parent 1:1 handle 10: netem \
+    delay ${delay}ms \
+    loss ${pl}% \
+    limit ${limit}
+
+# Random initial phase
+phase=$((1 + RANDOM % 5))
 counter=0
-phase_duration=$((10 + RANDOM % 11))  # Random duration 10-20 seconds
+phase_duration=$((20 + RANDOM % 21))  # 20-40 seconds
 
-echo "Starting network simulation with random phases..."
+echo "Starting network simulation with random initial phase: $phase"
 
 while true; do
     counter=$((counter + 1))
-    
+
     case $phase in
-        1)  
-            bandwidth=$((45000 + RANDOM % 10000))  # 45-55 Mbps
-            delay=$((40 + RANDOM % 30))             # 40-70ms
-            pl=$(echo "scale=2; $(($RANDOM % 30)) / 100" | bc)  # 0-0.3%
+        1)
+            # Moderate bottleneck with big queue - primary queuing phase
+            bandwidth=$((1200 + RANDOM % 1300))     # 1.2-2.5 Mbps
+            delay=$((60 + RANDOM % 50))             # 60-110 ms base
+            pl=$(echo "scale=2; 0.2 + $(($RANDOM % 40)) / 100" | bc)  # 0.2-0.6% loss
+            limit=40000  # Large queue for queuing delay
             ;;
-            
-        2)  
-            bandwidth=$((8000 + RANDOM % 5000))     # 8-13 Mbps
-            delay=$((60 + RANDOM % 40))             # 60-100ms
-            pl=$(echo "scale=2; 0.5 + $(($RANDOM % 150)) / 100" | bc)  # 0.5-2%
+
+        2)
+            # Tighter bottleneck - more aggressive queuing
+            bandwidth=$((600 + RANDOM % 800))       # 600-1400 kbps
+            delay=$((80 + RANDOM % 60))             # 80-140 ms base
+            pl=$(echo "scale=2; 0.25 + $(($RANDOM % 45)) / 100" | bc)  # 0.25-0.7% loss
+            limit=50000  # Very deep queue
             ;;
-            
-        3)  
-            bandwidth=$((25000 + RANDOM % 15000))   # 25-40 Mbps
-            delay=$((100 + RANDOM % 150))           # 100-250ms
-            pl=$(echo "scale=2; $(($RANDOM % 100)) / 100" | bc)  # 0-1%
+
+        3)
+            # Light congestion - less queuing
+            bandwidth=$((2500 + RANDOM % 2000))     # 2.5-4.5 Mbps
+            delay=$((40 + RANDOM % 40))             # 40-80 ms base
+            pl=$(echo "scale=2; 0.3 + $(($RANDOM % 80)) / 100" | bc)  # 0.3-1.1% loss
+            limit=25000
             ;;
-            
-        4)  
-            bandwidth=$((35000 + RANDOM % 10000))   # 35-45 Mbps
-            delay=$((50 + RANDOM % 50))             # 50-100ms
-            if [ $((RANDOM % 5)) -eq 0 ]; then
-                pl=$((10 + RANDOM % 10))            # 10-20% loss burst
-            else
-                pl=$(echo "scale=2; $(($RANDOM % 20)) / 100" | bc)  # 0-0.2%
-            fi
+
+        4)
+            # Moderate capacity
+            bandwidth=$((3500 + RANDOM % 2500))     # 3.5-6 Mbps
+            delay=$((30 + RANDOM % 40))             # 30-70 ms
+            pl=$(echo "scale=2; 0.25 + $(($RANDOM % 60)) / 100" | bc)  # 0.25-0.85% loss
+            limit=20000
             ;;
-            
-        5)  
-            bandwidth=$((40000 + RANDOM % 15000))   # 40-55 Mbps
-            delay=$((30 + RANDOM % 40))             # 30-70ms
-            pl=$(echo "scale=2; $(($RANDOM % 50)) / 100" | bc)  # 0-0.5%
-            reorder_delay=$((delay / 4))
-            reorder_prob=$((10 + RANDOM % 15))      # 10-25% reordering
-            tc qdisc change dev lo parent 1:1 handle 10: netem \
-                delay ${delay}ms ${reorder_delay}ms \
-                reorder ${reorder_prob}% \
-                loss ${pl}%
+
+        5)
+            # Sudden tight squeeze - instant queue buildup
+            bandwidth=$((800 + RANDOM % 600))       # 800-1400 kbps
+            delay=$((70 + RANDOM % 50))             # 70-120 ms base
+            pl=$(echo "scale=2; 0.2 + $(($RANDOM % 50)) / 100" | bc)  # 0.2-0.7% loss
+            limit=45000
             ;;
     esac
-    
 
-    if [ $phase -ne 5 ]; then
-        tc class change dev lo parent 1: classid 1:1 htb rate ${bandwidth}kbit ceil ${bandwidth}kbit
-        tc qdisc change dev lo parent 1:1 handle 10: netem delay ${delay}ms loss ${pl}%
-    else
-        tc class change dev lo parent 1: classid 1:1 htb rate ${bandwidth}kbit ceil ${bandwidth}kbit
-    fi
-    
-    echo "Phase: $phase, Time: $counter/$phase_duration, BW: ${bandwidth}kbit, Delay: ${delay}ms, Loss: ${pl}%"
+    # Apply shaping
+    tc class change dev lo parent 1: classid 1:1 htb \
+        rate ${bandwidth}kbit ceil ${bandwidth}kbit
+
+    tc qdisc change dev lo parent 1:1 handle 10: netem \
+        delay ${delay}ms \
+        loss ${pl}% \
+        limit ${limit}
+
+    echo "Phase: $phase, Time: $counter/$phase_duration, BW: ${bandwidth}kbit, Delay: ${delay}ms, Loss: ${pl}%, Limit: ${limit}"
 
     if [ $counter -ge $phase_duration ]; then
         next_phase=$phase
         while [ $next_phase -eq $phase ]; do
             next_phase=$((1 + RANDOM % 5))
         done
-        
+
         echo "=== Transitioning from Phase $phase to Phase $next_phase ==="
         phase=$next_phase
         counter=0
-        phase_duration=$((10 + RANDOM % 11))  
+        phase_duration=$((20 + RANDOM % 21))
     fi
-    
+
     sleep 1
 done

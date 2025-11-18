@@ -100,6 +100,19 @@ docker info
 
 You should see version information and system details without errors.
 
+## Start the simulator container once
+
+With Docker running, build and launch the course simulator (it stays up in the background and applies the training profile automatically):
+
+```bash
+cd docker
+./start-simulator.sh        # macOS/Linux
+# or
+start_sim.bat               # Windows
+```
+
+Once the container is running you can invoke `./test_sender.sh my_sender.py [payload.zip]` (or the `.bat` equivalent) as many times as you like; the scripts copy your latest sender/payload into `/app`/`/hdd` and restart only the in-container receivers between runs.
+
 ## Troubleshooting
 
 ### Docker daemon not running
