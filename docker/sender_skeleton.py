@@ -14,6 +14,8 @@ Notes:
     - This is NOT a full congestion-control implementation.
     - It intentionally sends only a couple of packets so you can smoke-test
       the simulator quickly before investing time in your own sender.
+    - Delay, jitter, and score calculations are hardcoded placeholders.
+      Students should implement their own metrics tracking.
 """
 
 from __future__ import annotations
@@ -55,7 +57,10 @@ def load_payload_chunks() -> List[bytes]:
                 data = f.read()
             break
     else:
-        print("Could not find payload file (tried TEST_FILE, PAYLOAD_FILE, file.zip)", file=sys.stderr)
+        print(
+            "Could not find payload file (tried TEST_FILE, PAYLOAD_FILE, file.zip)",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     if not data:
@@ -76,14 +81,26 @@ def parse_ack(packet: bytes) -> Tuple[int, str]:
     return seq, msg
 
 
-def compute_delay_jitter(samples: List[float]) -> Tuple[float, float]:
-    if not samples:
-        return 0.0, 0.0
-    avg_delay = sum(samples) / len(samples)
-    if len(samples) < 2:
-        return avg_delay, 0.0
-    diffs = [abs(samples[i] - samples[i - 1]) for i in range(1, len(samples))]
-    return avg_delay, sum(diffs) / len(diffs)
+def print_metrics(total_bytes: int, duration: float) -> None:
+    """
+    Print transfer metrics in the format expected by test scripts.
+
+    TODO: Students should replace the hardcoded delay/jitter/score values
+    with actual calculated metrics from their implementation.
+    """
+    throughput = total_bytes / duration
+
+    # Placeholder values - students should calculate these based on actual measurements
+    avg_delay = 0.0
+    avg_jitter = 0.0
+    score = 0.0
+
+    print("\nDemo transfer complete!")
+    print(f"duration={duration:.3f}s throughput={throughput:.2f} bytes/sec")
+    print(
+        f"avg_delay={avg_delay:.6f}s avg_jitter={avg_jitter:.6f}s (TODO: Calculate actual values)"
+    )
+    print(f"{throughput:.7f},{avg_delay:.7f},{avg_jitter:.7f},{score:.7f}")
 
 
 def main() -> None:
@@ -98,10 +115,11 @@ def main() -> None:
     # EOF marker
     transfers.append((seq, b""))
     total_bytes = sum(len(chunk) for chunk in demo_chunks)
-    delay_samples: List[float] = []
 
     print(f"Connecting to receiver at {HOST}:{PORT}")
-    print(f"Demo transfer will send {total_bytes} bytes across {len(demo_chunks)} packets (+EOF).")
+    print(
+        f"Demo transfer will send {total_bytes} bytes across {len(demo_chunks)} packets (+EOF)."
+    )
 
     start = time.time()
 
@@ -115,7 +133,6 @@ def main() -> None:
 
             retries = 0
             while True:
-                send_time = time.time()
                 sock.sendto(pkt, addr)
 
                 try:
@@ -123,8 +140,12 @@ def main() -> None:
                 except socket.timeout:
                     retries += 1
                     if retries > MAX_TIMEOUTS:
-                        raise RuntimeError("Receiver did not respond (max retries exceeded)")
-                    print(f"Timeout waiting for ACK (seq={seq_id}). Retrying ({retries}/{MAX_TIMEOUTS})...")
+                        raise RuntimeError(
+                            "Receiver did not respond (max retries exceeded)"
+                        )
+                    print(
+                        f"Timeout waiting for ACK (seq={seq_id}). Retrying ({retries}/{MAX_TIMEOUTS})..."
+                    )
                     continue
 
                 ack_id, msg = parse_ack(ack_pkt)
@@ -135,23 +156,10 @@ def main() -> None:
                     fin_ack = make_packet(ack_id, b"FIN/ACK")
                     sock.sendto(fin_ack, addr)
                     duration = max(time.time() - start, 1e-6)
-                    throughput = total_bytes / duration
-                    avg_delay, avg_jitter = compute_delay_jitter(delay_samples)
-                    score = (
-                        0.2 * (throughput / 2000.0)
-                        + 0.1 / max(avg_jitter, 1e-9)
-                        + 0.8 / max(avg_delay, 1e-9)
-                        if avg_delay > 0 and avg_jitter > 0
-                        else 0.0
-                    )
-                    print("\nDemo transfer complete!")
-                    print(f"duration={duration:.3f}s throughput={throughput:.2f} bytes/sec")
-                    print(f"avg_delay={avg_delay:.6f}s avg_jitter={avg_jitter:.6f}s")
-                    print(f"{throughput:.7f},{avg_delay:.7f},{avg_jitter:.7f},{score:.7f}")
+                    print_metrics(total_bytes, duration)
                     return
 
                 if msg.startswith("ack") and ack_id >= seq_id + len(payload):
-                    delay_samples.append(time.time() - send_time)
                     break
                 # Else: duplicate/stale ACK, continue waiting
 
@@ -163,19 +171,7 @@ def main() -> None:
                 fin_ack = make_packet(ack_id, b"FIN/ACK")
                 sock.sendto(fin_ack, addr)
                 duration = max(time.time() - start, 1e-6)
-                throughput = total_bytes / duration
-                avg_delay, avg_jitter = compute_delay_jitter(delay_samples)
-                score = (
-                    0.2 * (throughput / 2000.0)
-                    + 0.1 / max(avg_jitter, 1e-9)
-                    + 0.8 / max(avg_delay, 1e-9)
-                    if avg_delay > 0 and avg_jitter > 0
-                    else 0.0
-                )
-                print("\nDemo transfer complete!")
-                print(f"duration={duration:.3f}s throughput={throughput:.2f} bytes/sec")
-                print(f"avg_delay={avg_delay:.6f}s avg_jitter={avg_jitter:.6f}s")
-                print(f"{throughput:.7f},{avg_delay:.7f},{avg_jitter:.7f},{score:.7f}")
+                print_metrics(total_bytes, duration)
                 return
 
 
@@ -185,4 +181,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"Skeleton sender hit an error: {exc}", file=sys.stderr)
         sys.exit(1)
-
