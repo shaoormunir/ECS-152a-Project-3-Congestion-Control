@@ -90,7 +90,6 @@ docker/
 ├── start_sim.bat           # Start the receiver and network emulator (Windows)
 ├── test_sender.sh          # Test your sender (optional payload) - Bash
 ├── test_sender.bat         # Test your sender (optional payload) - Batch
-├── test_fairness.sh        # Compare two senders side by side
 ├── receiver.py             # Pre-built receiver (DO NOT MODIFY)
 ├── training_profile.sh     # Network emulation script (DO NOT MODIFY)
 ├── docker-script.sh        # Container startup script
